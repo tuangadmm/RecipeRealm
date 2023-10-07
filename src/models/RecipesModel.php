@@ -15,7 +15,7 @@ class RecipesModel
         $this->db = $db;
         $this->userModel = $userModel;
     }
-    
+
     /**
      * Insert new recipe
      * @param string $username
@@ -75,6 +75,55 @@ class RecipesModel
         } finally {
             $this->db->closeConnection();
         }
+    }
+
+    /**
+     * Delete recipe from database
+     * @param string $username
+     * @param int $recipeId
+     * @return bool
+     */
+    public function deleteRecipe(string $username, int $recipeId): bool
+    {
+        $userId = $this->userModel->getUserIdByUsername($username);
+        if($userId && $this->existsByUserIdAndRecipeId($userId, $recipeId)){
+            try{
+                $conn = $this->db->getConnection();
+
+                //get list of image names
+                $sql = "select image_url from recipe_images where recipe_id = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([$recipeId]);
+                $toBeDeleted = $stmt->fetchAll(2);
+
+                //delete information from database
+                $conn->beginTransaction();
+                $queries = [
+                  "delete from comments where recipe_id = ?",
+                  "delete from rel_recipe_cat where recipe_id = ?",
+                  "delete from likes where recipe_id = ?",
+                  "delete from favorites where recipe_id = ?",
+                  "delete from recipe_images where recipe_id = ?",
+                ];
+                foreach ($queries as $sql){
+                    $stmt = $conn->prepare($sql);
+                    $stmt->execute([$recipeId]);
+                }
+                $conn->commit();
+
+                //delete images
+                $fileUpload = new FileUpload();
+                $fileUpload->delete($toBeDeleted);
+
+                return true;
+            }catch (\Exception $e){
+                echo 'deleteRecipe failed. ' . $e->getMessage();
+                return false;
+            } finally {
+                $this->db->closeConnection();
+            }
+        }
+        return false;
     }
 
     /**
@@ -234,11 +283,11 @@ class RecipesModel
 
     /**
      * Add recipe to favorite list
-     * @param int $username
+     * @param string $username
      * @param int $recipeId
      * @return bool
      */
-    public function addToFavorites(int $username, int $recipeId): bool
+    public function addToFavorites(string $username, int $recipeId): bool
     {
         $userId = $this->userModel->getUserIdByUsername($username);
         if($userId){
@@ -283,11 +332,11 @@ class RecipesModel
 
     /**
      * Add recipe to likes list
-     * @param int $username
+     * @param string $username
      * @param int $recipeId
      * @return bool
      */
-    public function addToLikes(int $username, int $recipeId): bool
+    public function addToLikes(string $username, int $recipeId): bool
     {
         $userId = $this->userModel->getUserIdByUsername($username);
         if($userId){
@@ -412,6 +461,32 @@ class RecipesModel
             $stmt->execute();
         }catch (\Exception $e){
             echo 'uploadCategories failed. ' . $e->getMessage();
+        } finally {
+            $this->db->closeConnection();
+        }
+    }
+
+    /**
+     * Check if user own the recipe or not
+     * @param int $userId
+     * @param int $recipeId
+     * @return bool
+     */
+    private function existsByUserIdAndRecipeId(int $userId, int $recipeId): bool
+    {
+        try{
+            $conn = $this->db->getConnection();
+
+            $sql = "select count(*) as count from recipes where user_id = ? and recipe_id = ?";
+            $stmt =  $conn->prepare( $sql);
+            $stmt->execute([$userId, $recipeId]);
+
+            $res = $stmt->fetch(2);
+
+            return $res['count'] == 1;
+        }catch (\Exception $e){
+            echo 'existsByUserIdAndRecipeId failed. ' . $e->getMessage();
+            return false;
         } finally {
             $this->db->closeConnection();
         }

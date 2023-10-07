@@ -23,10 +23,9 @@ class FileUpload
         return false;
     }
 
-    public function delete(string $img_url): bool
+    public function delete(array $imgUrls): void
     {
     
-        return false;
     }
 
     private function revertUpload(): void
@@ -42,6 +41,10 @@ class FileUpload
 
 
     private function doUpload(){
+
+    }
+
+    private function doDelete(){
 
     }
 
