@@ -31,9 +31,6 @@ class RecipesModel
             if($userId){
 
             }
-
-
-
             return true;
         }catch (\Exception $e){
             echo 'createRecipe failed. ' . $e->getMessage();
@@ -222,6 +219,11 @@ class RecipesModel
         } finally {
             $this->db->closeConnection();
         }
+    }
+
+    private function uploadImages(int $recipeId, array $images)
+    {
+        
     }
 
 
