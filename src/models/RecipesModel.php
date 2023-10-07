@@ -3,17 +3,30 @@
 namespace Src\models;
 
 use Src\models\database\Context;
+use Src\utils\FileUpload;
 
 class RecipesModel
 {
     private Context $db;
+    private UsersModel $userModel;
 
-    public function __construct(Context $db)
+    public function __construct(Context $db, UsersModel $userModel)
     {
         $this->db = $db;
+        $this->userModel = $userModel;
     }
-
-
+    
+    /**
+     * Insert new recipe
+     * @param string $username
+     * @param string $thumbnail
+     * @param string $title
+     * @param string $description
+     * @param string $instruction
+     * @param array $categories
+     * @param array $images
+     * @return bool
+     */
     public function createRecipe(
         string $username,
         string $thumbnail,
@@ -24,16 +37,40 @@ class RecipesModel
         array $images
     ): bool
     {
-        $userId = (new UsersModel($this->db))->getUserIdByUsername($username);
+        $userId = $this->userModel->getUserIdByUsername($username);
         try{
             $conn = $this->db->getConnection();
 
             if($userId){
+                //upload images to server
+                $fileUpload = new FileUpload();
+                if(!$fileUpload->upload($images)) return false;
 
+                //insert information to database
+                $conn->beginTransaction();
+
+                //insert recipe information
+                $sql = "insert into recipes(user_id, thumbnail, title, description, instruction) values (?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([$userId, $thumbnail, $title, $description, $instruction]);
+
+                //get last inserted recipe_id
+                $repId = $conn->lastInsertId();
+
+                //insert categories
+                $this->uploadCategories($repId, $categories);
+
+                //insert recipe images
+                if($this->uploadImages($repId, $fileUpload->getUploaded())){
+                    $conn->commit();
+                    return true;
+                }
+                $conn->rollBack();
             }
-            return true;
+            return false;
         }catch (\Exception $e){
             echo 'createRecipe failed. ' . $e->getMessage();
+            $conn->rollBack();
             return false;
         } finally {
             $this->db->closeConnection();
@@ -196,6 +233,104 @@ class RecipesModel
     }
 
     /**
+     * Add recipe to favorite list
+     * @param int $username
+     * @param int $recipeId
+     * @return bool
+     */
+    public function addToFavorites(int $username, int $recipeId): bool
+    {
+        $userId = $this->userModel->getUserIdByUsername($username);
+        if($userId){
+            try{
+                $conn = $this->db->getConnection();
+                $sql = "insert into favorites(user_id, recipe_id) value (?, ?)";
+                $stmt =  $conn->prepare($sql);
+                $stmt->execute([$userId, $recipeId]);
+
+                return true;
+            }catch (\Exception $e){
+                echo 'addToFavorites failed. ' . $e->getMessage();
+                return false;
+            } finally {
+                $this->db->closeConnection();
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Remove recipe from favorite list
+     * @param int $favId
+     * @return bool
+     */
+    public function removeFromFavorites(int $favId): bool
+    {
+        try{
+            $conn = $this->db->getConnection();
+            $sql = "delete from favorites where favorite_id = ?";
+            $stmt =  $conn->prepare($sql);
+            $stmt->execute([$favId]);
+
+            return true;
+        }catch (\Exception $e){
+            echo 'removeFromFavorites failed. ' . $e->getMessage();
+            return false;
+        } finally {
+            $this->db->closeConnection();
+        }
+    }
+
+    /**
+     * Add recipe to likes list
+     * @param int $username
+     * @param int $recipeId
+     * @return bool
+     */
+    public function addToLikes(int $username, int $recipeId): bool
+    {
+        $userId = $this->userModel->getUserIdByUsername($username);
+        if($userId){
+            try{
+                $conn = $this->db->getConnection();
+                $sql = "insert into likes(user_id, recipe_id) value (?, ?)";
+                $stmt =  $conn->prepare($sql);
+                $stmt->execute([$userId, $recipeId]);
+
+                return true;
+            }catch (\Exception $e){
+                echo 'addToLikes failed. ' . $e->getMessage();
+                return false;
+            } finally {
+                $this->db->closeConnection();
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Remove recipe from like list
+     * @param int $likeId
+     * @return bool
+     */
+    public function removeFromLikes(int $likeId): bool
+    {
+        try{
+            $conn = $this->db->getConnection();
+            $sql = "delete from likes where like_id = ?";
+            $stmt =  $conn->prepare($sql);
+            $stmt->execute([$likeId]);
+
+            return true;
+        }catch (\Exception $e){
+            echo 'removeFromLikes failed. ' . $e->getMessage();
+            return false;
+        } finally {
+            $this->db->closeConnection();
+        }
+    }
+
+    /**
      * Get comments of a recipe
      * @param int $recipeId
      * @return ?array
@@ -221,9 +356,65 @@ class RecipesModel
         }
     }
 
-    private function uploadImages(int $recipeId, array $images)
+    /**
+     * Insert image_link with corresponding recipe_id
+     * @param int $recipeId
+     * @param array $images
+     * @return bool
+     */
+    private function uploadImages(int $recipeId, array $images): bool
     {
-        
+        if(count($images) < 1){
+            return false;
+        }
+
+        try{
+            $conn = $this->db->getConnection();
+
+            $sqlHead = /** @lang text */
+                "insert into recipe_images(recipe_id, image_url) values ";
+            $sqlData = array_fill(0, count($images), "($recipeId, ?)");
+
+            $stmt =  $conn->prepare( $sqlHead . implode(', ', $sqlData));
+            foreach ($images as $index => $value){
+                $stmt->bindValue($index + 1, $value );
+            }
+
+            $stmt->execute();
+            return true;
+        }catch (\Exception $e){
+            echo 'uploadImages failed. ' . $e->getMessage();
+            return false;
+        } finally {
+            $this->db->closeConnection();
+        }
+    }
+
+    /**
+     * Add categories of recipe to database
+     * @param int $recipeId
+     * @param array $cats
+     * @return void
+     */
+    private function uploadCategories(int $recipeId, array $cats): void
+    {
+        try{
+            $conn = $this->db->getConnection();
+
+            $sqlHead = /** @lang text */
+                "insert rel_recipe_cat(recipe_id, cat_id) values ";
+            $sqlData = array_fill(0, count($cats), "($recipeId, ?)");
+
+            $stmt =  $conn->prepare( $sqlHead . implode(', ', $sqlData));
+            foreach ($cats as $index => $value){
+                $stmt->bindValue($index + 1, $value );
+            }
+            $stmt->execute();
+        }catch (\Exception $e){
+            echo 'uploadCategories failed. ' . $e->getMessage();
+        } finally {
+            $this->db->closeConnection();
+        }
     }
 
 

@@ -6,11 +6,21 @@ class FileUpload
 {
     private array $uploaded;
 
-    public function upload(): array
+    public function __destruct()
+    {
+        $this->uploaded = [];
+    }
+
+    public function getUploaded(): ?array
+    {
+        return $this->uploaded;
+    }
+
+    public function upload(array $images): bool
     {
 
 
-        return $this->uploaded;
+        return false;
     }
 
     public function delete(string $img_url): bool
@@ -23,6 +33,13 @@ class FileUpload
     {
 
     }
+
+    private function validateUploaded(): bool
+    {
+
+        return false;
+    }
+
 
     private function doUpload(){
 
