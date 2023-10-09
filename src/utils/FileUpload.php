@@ -5,6 +5,7 @@ namespace Src\utils;
 class FileUpload
 {
     private array $uploaded;
+    private string $imgPath = './images/';
 
     public function __destruct()
     {
@@ -40,12 +41,34 @@ class FileUpload
     }
 
 
-    private function doUpload(){
+    private function doUpload(array $image): bool
+    {
 
+
+        return false;
     }
 
-    private function doDelete(){
-
+    /**
+     * Delete file
+     * @param string $imgUrl
+     * @return bool
+     */
+    private function doDelete(string $imgUrl): bool
+    {
+        return unlink($this->imgPath . $imgUrl);
     }
 
+    /**
+     * Return unique file name with corresponding extension
+     * @param string $extension
+     * @return string|null
+     */
+    private function rename(string $extension): ?string
+    {
+        try{
+            return 'recipe_image_' . time() . '_' . bin2hex(random_bytes(6)) . '.' . $extension;
+        }catch (\Exception $e){
+            return null;
+        }
+    }
 }
